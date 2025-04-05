@@ -40,8 +40,12 @@ pipeline {
                     // Extract the downloaded tar.gz file
                     sh 'tar -xvzf google-cloud-sdk.tar.gz'
                     
-                    // Install Google Cloud SDK
-                    sh './google-cloud-sdk/install.sh --usage-reporting=false --path-update=false --bash-completion=false'
+                    // Install Google Cloud SDK and automatically accept the Python 3.12 installation prompt
+                    sh '''#!/bin/bash
+                    ./google-cloud-sdk/install.sh --usage-reporting=false --path-update=false --bash-completion=false <<EOF
+y
+EOF
+                    '''
                     
                     // Initialize Google Cloud SDK
                     sh './google-cloud-sdk/bin/gcloud init --skip-diagnostics'
