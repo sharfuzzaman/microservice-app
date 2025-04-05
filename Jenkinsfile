@@ -6,100 +6,54 @@ pipeline {
         GKE_CREDS = credentials('gke-cred')
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
-        REGION = 'europe-north1-a'
+        REGION = 'europe-north1'
         CLOUDSDK_PYTHON = '/usr/bin/python3'
-        DOCKER_PATH = '/usr/local/bin' // Explicit path to Docker
+        DOCKER_PATH = '/usr/local/bin'
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/sharfuzzaman/microservice-app.git', branch: 'main'
             }
         }
-        
-        stage('Verify Python') {
+
+        stage('Setup GCP Auth') {
             steps {
                 script {
-                    sh 'python3 --version'
-                }
-            }
-        }
-        
-        stage('Setup Google Cloud SDK') {
-            steps {
-                script {
-                    // Check if gcloud exists in standard paths
-                    def gcloudInstalled = sh(script: 'command -v gcloud >/dev/null 2>&1', returnStatus: true) == 0
-                    
-                    if (!gcloudInstalled) {
-                        echo "Installing Google Cloud SDK..."
-                        
-                        // Download and install minimal components
-                        sh '''
-                        # Remove any existing installation
-                        rm -rf google-cloud-sdk google-cloud-sdk.tar.gz
-                        
-                        # Download specific version compatible with Python 3.9
-                        curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
-                        tar -xzf google-cloud-sdk.tar.gz
-                        
-                        # Install with no additional components
-                        ./google-cloud-sdk/install.sh \
-                            --quiet \
-                            --usage-reporting=false \
-                            --path-update=false \
-                            --command-completion=false
-                        
-                        # Add to PATH for current session
-                        export PATH="$PATH:$PWD/google-cloud-sdk/bin"
-                        
-                        # Install required components separately
-                        ./google-cloud-sdk/bin/gcloud components install kubectl gke-gcloud-auth-plugin --quiet
-                        '''
-                    }
-                    
-                    // Ensure PATH is set for all commands
-                    withEnv(["PATH+CLOUD=${pwd()}/google-cloud-sdk/bin"]) {
-                        sh '''
-                        gcloud --version
-                        gcloud auth activate-service-account --key-file=$GKE_CREDS
-                        gcloud config set project $PROJECT_ID
-                        '''
-                    }
+                    sh """
+                    gcloud auth activate-service-account --key-file=${GKE_CREDS}
+                    gcloud config set project ${PROJECT_ID}
+                    """
                 }
             }
         }
 
-        stage('Verify Docker') {
-            steps {
-                script {
-                    // Explicitly use the full Docker path
-                    sh '''
-                    $DOCKER_PATH/docker --version
-                    command -v $DOCKER_PATH/docker
-                    '''
-                }
-            }
-        }
-        
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    sh '''
-                    mkdir -p $DOCKER_CONFIG
-                    echo '{"credsStore":""}' > $DOCKER_CONFIG/config.json
-                    echo $DOCKER_HUB_CREDS_PSW | $DOCKER_PATH/docker login -u $DOCKER_HUB_CREDS_USR --password-stdin
-                    '''
-                    
-                    dir('docker/prometheus') {
-                        sh '$DOCKER_PATH/docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
-                        sh '$DOCKER_PATH/docker push devops8080/spring-petclinic-prometheus-server:latest'
+                    // Secure Docker login with credentials
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-cred',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh """
+                        mkdir -p ${DOCKER_CONFIG}
+                        echo '{"auths":{"https://index.docker.io/v1/":{"auth":"$(echo -n ${DOCKER_USER}:${DOCKER_PASS} | base64)"}}}' > ${DOCKER_CONFIG}/config.json
+                        ${DOCKER_PATH}/docker login -u ${DOCKER_USER} -p ${DOCKER_PASS} || true
+                        """
                     }
-                    
+
+                    // Build and push images
+                    dir('docker/prometheus') {
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-prometheus-server:latest"
+                    }
+
                     dir('docker/grafana') {
-                        sh '$DOCKER_PATH/docker build -t devops8080/spring-petclinic-grafana-server:latest .'
-                        sh '$DOCKER_PATH/docker push devops8080/spring-petclinic-grafana-server:latest'
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-grafana-server:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-grafana-server:latest"
                     }
                 }
             }
@@ -108,29 +62,37 @@ pipeline {
         stage('Deploy to GKE') {
             steps {
                 script {
-                    withEnv(["PATH+CLOUD=${pwd()}/google-cloud-sdk/bin"]) {
-                        sh """
-                        gcloud container clusters get-credentials $CLUSTER_NAME \
-                            --region $REGION \
-                            --project $PROJECT_ID
-                        
-                        # Apply all Kubernetes manifests
-                        kubectl apply -f k8s/config-server.yaml
-                        kubectl apply -f k8s/discovery-server.yaml
-                        kubectl apply -f k8s/customers-service.yaml
-                        kubectl apply -f k8s/visits-service.yaml
-                        kubectl apply -f k8s/vets-service.yaml
-                        kubectl apply -f k8s/genai-service.yaml
-                        kubectl apply -f k8s/api-gateway.yaml
-                        kubectl apply -f k8s/tracing-server.yaml
-                        kubectl apply -f k8s/admin-server.yaml
-                        kubectl apply -f k8s/grafana-server.yaml
-                        kubectl apply -f k8s/prometheus-server.yaml
-                        
-                        # Verify deployment
-                        kubectl get pods
-                        """
+                    // Get cluster credentials with retry logic
+                    sh """
+                    gcloud container clusters get-credentials ${CLUSTER_NAME} \
+                        --region ${REGION} \
+                        --project ${PROJECT_ID} || \
+                    gcloud container clusters get-credentials ${CLUSTER_NAME} \
+                        --zone ${REGION}-a \
+                        --project ${PROJECT_ID}
+                    """
+
+                    // Apply all Kubernetes manifests
+                    def k8sManifests = [
+                        'config-server',
+                        'discovery-server',
+                        'customers-service',
+                        'visits-service',
+                        'vets-service',
+                        'genai-service',
+                        'api-gateway',
+                        'tracing-server',
+                        'admin-server',
+                        'grafana-server',
+                        'prometheus-server'
+                    ]
+
+                    k8sManifests.each { manifest ->
+                        sh "kubectl apply -f k8s/${manifest}.yaml"
                     }
+
+                    // Verify deployment
+                    sh "kubectl get pods --watch"
                 }
             }
         }
@@ -138,13 +100,18 @@ pipeline {
 
     post {
         always {
-            sh '$DOCKER_PATH/docker logout || true'
+            sh "${DOCKER_PATH}/docker logout || true"
         }
         success {
-            echo 'Deployment to GKE completed successfully!'
+            echo '✅ Deployment successful! Access your services using:'
+            sh """
+            echo -n 'API Gateway: ' && kubectl get svc api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+            echo -n 'Grafana: ' && kubectl get svc grafana-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+            """
         }
         failure {
-            echo 'Pipeline failed. Check logs for details.'
+            echo '❌ Pipeline failed. Check logs above for details.'
+            sh "kubectl get events --sort-by='.lastTimestamp'"
         }
     }
 }
