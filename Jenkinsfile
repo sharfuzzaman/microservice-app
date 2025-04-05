@@ -29,14 +29,14 @@ pipeline {
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    sh 'echo $DOCKER_HUB_CREDS_PSW | docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
+                    sh 'echo $DOCKER_HUB_CREDS_PSW | /usr/local/bin/docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
                     dir('docker/prometheus') {
-                        sh 'docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
-                        sh 'docker push devops8080/spring-petclinic-prometheus-server:latest'
+                        sh '/usr/local/bin/docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
+                        sh '/usr/local/bin/docker push devops8080/spring-petclinic-prometheus-server:latest'
                     }
                     dir('docker/grafana') {
-                        sh 'docker build -t devops8080/spring-petclinic-grafana-server:latest .'
-                        sh 'docker push devops8080/spring-petclinic-grafana-server:latest'
+                        sh '/usr/local/bin/docker build -t devops8080/spring-petclinic-grafana-server:latest .'
+                        sh '/usr/local/bin/docker push devops8080/spring-petclinic-grafana-server:latest'
                     }
                 }
             }
