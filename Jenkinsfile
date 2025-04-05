@@ -15,24 +15,36 @@ pipeline {
         stage('Install Prerequisites') {
             steps {
                 script {
-                    // Install Google Cloud SDK if not available
+                    // Install Google Cloud SDK with forced PATH update
                     sh '''
-                    if ! command -v gcloud &> /dev/null; then
-                        echo "Installing Google Cloud SDK..."
-                        curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
-                        tar -xzf google-cloud-sdk.tar.gz
-                        ./google-cloud-sdk/install.sh --quiet \
-                            --usage-reporting=false \
-                            --path-update=true
-                        source ~/.bashrc
-                    fi
+                    # Remove any existing installation
+                    rm -rf google-cloud-sdk google-cloud-sdk.tar.gz
+                    
+                    # Download and install
+                    curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
+                    tar -xzf google-cloud-sdk.tar.gz
+                    
+                    # Install with PATH update
+                    ./google-cloud-sdk/install.sh \
+                        --quiet \
+                        --usage-reporting=false \
+                        --path-update=true \
+                        --rc-path="$HOME/.bashrc" \
+                        --command-completion=false
+                    
+                    # Explicitly add to current PATH
+                    export PATH="$PATH:$PWD/google-cloud-sdk/bin"
+                    echo "PATH updated to: $PATH"
+                    
+                    # Install required components
+                    ./google-cloud-sdk/bin/gcloud components install kubectl gke-gcloud-auth-plugin --quiet
                     '''
                     
                     // Verify installations
                     sh '''
-                    gcloud --version || exit 1
-                    kubectl version --client || exit 1
-                    docker --version || exit 1
+                    $PWD/google-cloud-sdk/bin/gcloud --version
+                    $PWD/google-cloud-sdk/bin/kubectl version --client
+                    docker --version
                     '''
                 }
             }
@@ -42,8 +54,8 @@ pipeline {
             steps {
                 script {
                     sh """
-                    gcloud auth activate-service-account --key-file=\$GKE_CREDS
-                    gcloud config set project \$PROJECT_ID
+                    $PWD/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=\$GKE_CREDS
+                    $PWD/google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
                     """
                 }
             }
@@ -81,26 +93,26 @@ pipeline {
             steps {
                 script {
                     sh """
-                    gcloud container clusters get-credentials \$CLUSTER_NAME \\
+                    $PWD/google-cloud-sdk/bin/gcloud container clusters get-credentials \$CLUSTER_NAME \\
                         --region \$REGION \\
-                        --project \$PROJECT_ID || \\
-                    gcloud container clusters get-credentials \$CLUSTER_NAME \\
-                        --zone \$REGION-a \\
                         --project \$PROJECT_ID
                     """
 
-                    def k8sManifests = [
-                        'config-server', 'discovery-server', 'customers-service',
-                        'visits-service', 'vets-service', 'genai-service',
-                        'api-gateway', 'tracing-server', 'admin-server',
-                        'grafana-server', 'prometheus-server'
-                    ]
-
-                    k8sManifests.each { manifest ->
-                        sh "kubectl apply -f k8s/${manifest}.yaml"
-                    }
-
-                    sh "kubectl get pods --watch"
+                    sh """
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/config-server.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/discovery-server.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/customers-service.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/visits-service.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/vets-service.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/genai-service.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/api-gateway.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/tracing-server.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/admin-server.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/grafana-server.yaml
+                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/prometheus-server.yaml
+                    
+                    $PWD/google-cloud-sdk/bin/kubectl get pods
+                    """
                 }
             }
         }
@@ -109,17 +121,6 @@ pipeline {
     post {
         always {
             sh "\$DOCKER_PATH/docker logout || true"
-        }
-        success {
-            echo '✅ Deployment successful!'
-            sh """
-            echo 'API Gateway IP: ' \$(kubectl get svc api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            echo 'Grafana IP: ' \$(kubectl get svc grafana-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            """
-        }
-        failure {
-            echo '❌ Pipeline failed'
-            sh "kubectl get events --sort-by=.lastTimestamp || true"
         }
     }
 }
