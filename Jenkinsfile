@@ -3,41 +3,37 @@ pipeline {
     environment {
         DOCKER_CONFIG = '/tmp/docker-config'
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
-        GKE_CREDS = credentials('gke-cred') // This is your service account JSON file
+        GKE_CREDS = credentials('gke-cred')
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1'
         CLOUDSDK_PYTHON = '/usr/bin/python3'
         DOCKER_PATH = '/usr/local/bin'
-        KUBECONFIG = "$WORKSPACE/kubeconfig" // Custom kubeconfig location
+        KUBECONFIG = "\$WORKSPACE/kubeconfig"
     }
 
     stages {
         stage('Install Tools') {
             steps {
                 script {
-                    // Install Google Cloud SDK if not available
                     sh '''
                     if ! command -v gcloud &> /dev/null; then
                         echo "Installing Google Cloud SDK..."
                         curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
                         tar -xzf google-cloud-sdk.tar.gz
-                        ./google-cloud-sdk/install.sh \
-                            --quiet \
-                            --usage-reporting=false \
-                            --path-update=true \
+                        ./google-cloud-sdk/install.sh \\
+                            --quiet \\
+                            --usage-reporting=false \\
+                            --path-update=true \\
                             --command-completion=false
                         
-                        # Install required components
                         ./google-cloud-sdk/bin/gcloud components install kubectl --quiet
                         
-                        # Update PATH
-                        export PATH="$PATH:$PWD/google-cloud-sdk/bin"
+                        export PATH="\$PATH:\$PWD/google-cloud-sdk/bin"
                         source ~/.bash_profile
                     fi
                     '''
                     
-                    // Verify Docker
                     sh """
                     if ! command -v ${DOCKER_PATH}/docker &> /dev/null; then
                         echo "ERROR: Docker not found at ${DOCKER_PATH}/docker"
@@ -52,25 +48,22 @@ pipeline {
         stage('Configure GCP Auth') {
             steps {
                 script {
-                    // Authenticate using service account
                     sh """
                     ./google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=\$GKE_CREDS
                     ./google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
                     ./google-cloud-sdk/bin/gcloud config set compute/region \$REGION
                     
-                    # Generate kubeconfig with direct authentication
                     ./google-cloud-sdk/bin/gcloud container clusters get-credentials \$CLUSTER_NAME \\
                         --region \$REGION \\
                         --project \$PROJECT_ID \\
                         --internal-ip
                     
-                    # Create custom kubeconfig with direct token access
                     cat > \$KUBECONFIG <<EOF
 apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority-data: $(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(masterAuth.clusterCaCertificate)")
-    server: https://$(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(privateClusterConfig.privateEndpoint)")
+    certificate-authority-data: \$(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(masterAuth.clusterCaCertificate)")
+    server: https://\$(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(privateClusterConfig.privateEndpoint)")
   name: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
 contexts:
 - context:
@@ -86,7 +79,7 @@ users:
     auth-provider:
       config:
         cmd-args: config config-helper --format=json
-        cmd-path: $PWD/google-cloud-sdk/bin/gcloud
+        cmd-path: \$PWD/google-cloud-sdk/bin/gcloud
         expiry-key: '{.credential.token_expiry}'
         token-key: '{.credential.access_token}'
       name: gcp
@@ -127,7 +120,6 @@ EOF
         stage('Deploy to GKE') {
             steps {
                 script {
-                    // Use our custom kubeconfig with direct authentication
                     sh """
                     export KUBECONFIG=\$KUBECONFIG
                     export GOOGLE_APPLICATION_CREDENTIALS=\$GKE_CREDS
