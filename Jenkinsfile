@@ -19,7 +19,7 @@ pipeline {
         }
         stage('Verify Docker') {
             steps {
-                sh 'which docker && docker --version'
+                sh 'command -v docker && docker --version'
             }
         }
         stage('Build and Push Docker Images') {
