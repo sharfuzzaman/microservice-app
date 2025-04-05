@@ -9,7 +9,7 @@ pipeline {
         REGION = 'europe-north1'
         CLOUDSDK_PYTHON = '/usr/bin/python3'
         DOCKER_PATH = '/usr/local/bin'
-        GOOGLE_APPLICATION_CREDENTIALS = credentials('gke-cred') // For direct auth
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gke-cred')
     }
 
     stages {
@@ -46,6 +46,7 @@ pipeline {
                         echo "ERROR: Docker not found at ${DOCKER_PATH}/docker"
                         exit 127
                     fi
+                    ${DOCKER_PATH}/docker --version
                     """
                 }
             }
@@ -60,11 +61,14 @@ pipeline {
                     ./google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
                     ./google-cloud-sdk/bin/gcloud config set compute/region \$REGION
                     
-                    # Configure kubectl to use direct authentication
+                    # Generate kubeconfig with direct token authentication
                     ./google-cloud-sdk/bin/gcloud container clusters get-credentials \$CLUSTER_NAME \\
                         --region \$REGION \\
                         --project \$PROJECT_ID \\
                         --internal-ip
+                    
+                    # Modify kubeconfig to use direct token authentication
+                    sed -i '' 's/exec: \"gke-gcloud-auth-plugin\"/exec: \"gcloud\", \"container\", \"print-access-token\" |/' \$HOME/.kube/config
                     """
                 }
             }
@@ -103,7 +107,9 @@ pipeline {
                 script {
                     // Use direct authentication with service account
                     sh """
+                    export KUBECONFIG=\$HOME/.kube/config
                     export GOOGLE_APPLICATION_CREDENTIALS=\$GKE_CREDS
+                    
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/config-server.yaml
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/discovery-server.yaml
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/customers-service.yaml
