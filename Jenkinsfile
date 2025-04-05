@@ -10,6 +10,8 @@ pipeline {
         CLOUDSDK_PYTHON = '/usr/bin/python3'
         DOCKER_PATH = '/usr/local/bin'
         KUBECONFIG = "$WORKSPACE/kubeconfig"
+        // Updated PATH to include both Docker and Google Cloud SDK
+        PATH = "/usr/bin:/bin:/usr/sbin:/sbin:${DOCKER_PATH}:$WORKSPACE/google-cloud-sdk/bin"
     }
 
     stages {
@@ -18,34 +20,39 @@ pipeline {
                 script {
                     sh '''
                     # Install Google Cloud SDK if not available
-                    if ! command -v gcloud &> /dev/null; then
+                    if [ ! -d "google-cloud-sdk" ]; then
                         echo "Installing Google Cloud SDK..."
                         curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
                         tar -xzf google-cloud-sdk.tar.gz
+                        rm google-cloud-sdk.tar.gz
+                        
+                        # Install required components including the auth plugin
                         ./google-cloud-sdk/install.sh \\
                             --quiet \\
                             --usage-reporting=false \\
                             --path-update=true \\
                             --command-completion=false
                         
-                        # Install required components including the auth plugin
                         ./google-cloud-sdk/bin/gcloud components install \\
                             kubectl \\
                             gke-gcloud-auth-plugin \\
+                            beta \\
                             --quiet
-                        
-                        export PATH="$PATH:$PWD/google-cloud-sdk/bin"
-                        source ~/.bash_profile
                     fi
                     '''
                     
+                    // Verify installations using ${DOCKER_PATH}
                     sh """
-                    # Verify Docker is installed
+                    # Verify Docker is installed at specified path
                     if ! command -v ${DOCKER_PATH}/docker &> /dev/null; then
                         echo "ERROR: Docker not found at ${DOCKER_PATH}/docker"
                         exit 127
                     fi
                     ${DOCKER_PATH}/docker --version
+                    
+                    # Verify gcloud
+                    ./google-cloud-sdk/bin/gcloud --version
+                    ./google-cloud-sdk/bin/gke-gcloud-auth-plugin --version
                     """
                 }
             }
@@ -60,14 +67,23 @@ pipeline {
                     ./google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
                     ./google-cloud-sdk/bin/gcloud config set compute/region \$REGION
                     
-                    # Get cluster credentials with the new auth plugin
+                    # Configure kubectl to use gke-gcloud-auth-plugin
                     ./google-cloud-sdk/bin/gcloud container clusters get-credentials \$CLUSTER_NAME \\
                         --region \$REGION \\
-                        --project \$PROJECT_ID \\
-                        --internal-ip
+                        --project \$PROJECT_ID
+                    
+                    # Update kubeconfig to use gke-gcloud-auth-plugin
+                    ./google-cloud-sdk/bin/kubectl config unset users.\$(./google-cloud-sdk/bin/kubectl config current-context).auth-provider
+                    ./google-cloud-sdk/bin/kubectl config set-credentials \$(./google-cloud-sdk/bin/kubectl config current-context) \\
+                        --auth-provider-arg=client-id=32555940559.apps.googleusercontent.com \\
+                        --auth-provider-arg=client-secret=ZmssLNjJy2998hD4CTg2ejr2 \\
+                        --auth-provider-arg=cmd-path=$WORKSPACE/google-cloud-sdk/bin/gke-gcloud-auth-plugin \\
+                        --auth-provider-arg=cmd-args="--use_application_default_credentials" \\
+                        --auth-provider=gcp
                     
                     # Verify authentication
                     ./google-cloud-sdk/bin/kubectl config current-context
+                    ./google-cloud-sdk/bin/kubectl get nodes
                     """
                 }
             }
@@ -105,9 +121,6 @@ pipeline {
             steps {
                 script {
                     sh """
-                    # Ensure the auth plugin is in PATH
-                    export PATH="\$PATH:$PWD/google-cloud-sdk/bin"
-                    
                     # Deploy all components
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/config-server.yaml
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/discovery-server.yaml
@@ -122,7 +135,7 @@ pipeline {
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/prometheus-server.yaml
                     
                     # Verify deployment
-                    ./google-cloud-sdk/bin/kubectl get pods
+                    ./google-cloud-sdk/bin/kubectl get pods -w
                     """
                 }
             }
@@ -143,6 +156,8 @@ pipeline {
         failure {
             echo '❌ Pipeline failed. Check logs for details.'
             sh "./google-cloud-sdk/bin/kubectl get events --sort-by=.lastTimestamp || true"
+            sh "./google-cloud-sdk/bin/kubectl get pods || true"
+            sh "./google-cloud-sdk/bin/kubectl describe pods || true"
         }
     }
 }
