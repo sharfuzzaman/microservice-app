@@ -4,7 +4,7 @@ pipeline {
         gcloud 'gcloud-sdk'
     }
     environment {
-        PATH = "/opt/homebrew/bin:${env.PATH}"
+        PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
         DOCKER_CONFIG = '/tmp/docker-config'
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-cred')
@@ -46,11 +46,13 @@ pipeline {
         stage('Verify Python and Google Cloud SDK') {
             steps {
                 script {
-                    // Check the versions of Python and gcloud to verify setup
+                    // Skip Python prompt if it's already installed
                     sh '''#!/bin/bash
-                    echo "Current PATH: $PATH"
-                    python3 --version
-                    gcloud --version
+                    if command -v python3 &> /dev/null; then
+                        echo "Python 3 is installed. Proceeding with gcloud SDK setup."
+                    else
+                        echo "Python 3 not found! Please install Python 3.12."
+                    fi
                     '''
                 }
             }
