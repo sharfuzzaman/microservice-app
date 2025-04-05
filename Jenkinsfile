@@ -4,6 +4,7 @@ pipeline {
         gcloud 'gcloud-sdk'
     }
     environment {
+        PATH = "/usr/local/bin:$PATH"
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-cred')
         PROJECT_ID = 'thesis-work-455913'
@@ -14,6 +15,11 @@ pipeline {
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/sharfuzzaman/microservice-app.git', branch: 'main'
+            }
+        }
+        stage('Verify Docker') {
+            steps {
+                sh 'which docker && docker --version'
             }
         }
         stage('Build and Push Docker Images') {
