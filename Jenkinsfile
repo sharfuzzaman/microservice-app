@@ -21,14 +21,14 @@ pipeline {
                     
                     // Build and push prometheus-server
                     dir('docker/prometheus') {
-                        sh 'docker build -t sharfuzzamansajib/spring-petclinic-prometheus-server:latest .'
-                        sh 'docker push sharfuzzamansajib/spring-petclinic-prometheus-server:latest'
+                        sh 'docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
+                        sh 'docker push devops8080/spring-petclinic-prometheus-server:latest'
                     }
                     
                     // Build and push grafana-server
                     dir('docker/grafana') {
-                        sh 'docker build -t sharfuzzamansajib/spring-petclinic-grafana-server:latest .'
-                        sh 'docker push sharfuzzamansajib/spring-petclinic-grafana-server:latest'
+                        sh 'docker build -t devops8080/spring-petclinic-grafana-server:latest .'
+                        sh 'docker push devops8080/spring-petclinic-grafana-server:latest'
                     }
                 }
             }
