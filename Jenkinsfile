@@ -1,5 +1,8 @@
 pipeline {
     agent any
+    tools {
+        googleCloudSdk 'gcloud-sdk'
+    }
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-cred')
