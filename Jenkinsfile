@@ -4,7 +4,7 @@ pipeline {
         gcloud 'gcloud-sdk'
     }
     environment {
-        PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        PATH = "/opt/homebrew/bin:${env.PATH}"
         DOCKER_CONFIG = '/tmp/docker-config'
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-cred')
@@ -45,7 +45,13 @@ pipeline {
         }
         stage ('Verify gcloud'){
             steps {
-                sh 'gcloud version'
+                script {
+                    // Example of verifying the path and checking if gcloud works
+                    sh '''#!/bin/bash
+                    echo "Current PATH: $PATH"
+                    gcloud --version
+                    '''
+                }
             }
         }
         stage('Deploy to GKE') {
