@@ -2,19 +2,29 @@ pipeline {
     agent any
     environment {
         DOCKER_CONFIG = '/tmp/docker-config'
-        DOCKER_HUB_CREDS = credentials('docker-hub-cred')
+        DOCKER_HUB_CREDS = credentials('docker-hub-cred') // Using Jenkins-stored credentials
         GKE_CREDS = credentials('gke-cred')
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1'
         CLOUDSDK_PYTHON = '/usr/bin/python3'
-        DOCKER_PATH = '/usr/local/bin'  // Confirmed from your which docker output
+        DOCKER_PATH = '/usr/local/bin'
     }
 
     stages {
-        stage('Install Prerequisites') {
+        stage('Verify Tools') {
             steps {
                 script {
+                    // Verify Docker is installed and accessible
+                    sh """
+                    if ! command -v ${DOCKER_PATH}/docker &> /dev/null; then
+                        echo "ERROR: Docker not found at ${DOCKER_PATH}/docker"
+                        echo "Please ensure Docker is installed and in the correct path"
+                        exit 127
+                    fi
+                    ${DOCKER_PATH}/docker --version
+                    """
+                    
                     // Install Google Cloud SDK if not available
                     sh '''
                     if ! command -v gcloud &> /dev/null; then
@@ -26,25 +36,14 @@ pipeline {
                             --usage-reporting=false \
                             --path-update=true \
                             --command-completion=false
-                        source ~/.bashrc
+                        source ~/.bash_profile
+                        
+                        # Install required components
+                        ./google-cloud-sdk/bin/gcloud components install kubectl gke-gcloud-auth-plugin --quiet
                     fi
+                    ./google-cloud-sdk/bin/gcloud --version
+                    ./google-cloud-sdk/bin/kubectl version --client
                     '''
-                    
-                    // Verify Docker is installed and accessible
-                    sh """
-                    if ! command -v docker &> /dev/null; then
-                        echo "ERROR: Docker not found at \${DOCKER_PATH}/docker"
-                        echo "Please install Docker Desktop for Mac and ensure it's in your PATH"
-                        exit 127
-                    fi
-                    """
-                    
-                    // Verify all tools
-                    sh """
-                    $PWD/google-cloud-sdk/bin/gcloud --version || exit 1
-                    $PWD/google-cloud-sdk/bin/kubectl version --client || exit 1
-                    ${DOCKER_PATH}/docker --version || exit 1
-                    """
                 }
             }
         }
@@ -53,33 +52,33 @@ pipeline {
             steps {
                 script {
                     sh """
-                    $PWD/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=\$GKE_CREDS
-                    $PWD/google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
+                    ./google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=\$GKE_CREDS
+                    ./google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
                     """
                 }
             }
         }
 
-        stage('Build and Push Docker Images') {
+        stage('Docker Login') {
             steps {
                 script {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-cred',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )]) {
-                        sh """
-                        mkdir -p \$DOCKER_CONFIG
-                        echo '{"auths":{"https://index.docker.io/v1/":{"auth":"\$(echo -n \$DOCKER_USER:\$DOCKER_PASS | base64)"}}}' > \$DOCKER_CONFIG/config.json
-                        ${DOCKER_PATH}/docker login -u \$DOCKER_USER -p \$DOCKER_PASS || true
-                        """
-                    }
+                    // Using the Jenkins-stored Docker Hub credentials
+                    sh """
+                    mkdir -p ${DOCKER_CONFIG}
+                    ${DOCKER_PATH}/docker login -u ${DOCKER_HUB_CREDS_USR} -p ${DOCKER_HUB_CREDS_PSW}
+                    """
+                }
+            }
+        }
 
+        stage('Build and Push Images') {
+            steps {
+                script {
                     dir('docker/prometheus') {
                         sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
                         sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-prometheus-server:latest"
                     }
-
+                    
                     dir('docker/grafana') {
                         sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-grafana-server:latest ."
                         sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-grafana-server:latest"
@@ -92,25 +91,25 @@ pipeline {
             steps {
                 script {
                     sh """
-                    $PWD/google-cloud-sdk/bin/gcloud container clusters get-credentials \$CLUSTER_NAME \\
-                        --region \$REGION \\
-                        --project \$PROJECT_ID
+                    ./google-cloud-sdk/bin/gcloud container clusters get-credentials ${CLUSTER_NAME} \\
+                        --region ${REGION} \\
+                        --project ${PROJECT_ID}
                     """
 
                     sh """
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/config-server.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/discovery-server.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/customers-service.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/visits-service.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/vets-service.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/genai-service.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/api-gateway.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/tracing-server.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/admin-server.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/grafana-server.yaml
-                    $PWD/google-cloud-sdk/bin/kubectl apply -f k8s/prometheus-server.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/config-server.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/discovery-server.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/customers-service.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/visits-service.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/vets-service.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/genai-service.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/api-gateway.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/tracing-server.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/admin-server.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/grafana-server.yaml
+                    ./google-cloud-sdk/bin/kubectl apply -f k8s/prometheus-server.yaml
                     
-                    $PWD/google-cloud-sdk/bin/kubectl get pods
+                    ./google-cloud-sdk/bin/kubectl get pods
                     """
                 }
             }
@@ -120,6 +119,17 @@ pipeline {
     post {
         always {
             sh "${DOCKER_PATH}/docker logout || true"
+        }
+        success {
+            echo 'Deployment successful! Access your services:'
+            sh """
+            echo 'API Gateway: ' \$(./google-cloud-sdk/bin/kubectl get svc api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            echo 'Grafana: ' \$(./google-cloud-sdk/bin/kubectl get svc grafana-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            """
+        }
+        failure {
+            echo 'Pipeline failed. Check logs for details.'
+            sh "./google-cloud-sdk/bin/kubectl get events --sort-by=.lastTimestamp || true"
         }
     }
 }
