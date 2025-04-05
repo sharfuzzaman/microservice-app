@@ -31,6 +31,11 @@ pipeline {
                 }
             }
         }
+        stage ('Verify gcloud'){
+            steps {
+                sh 'gcloud -version'
+            }
+        }
         stage('Deploy to GKE') {
             steps {
                 script {
