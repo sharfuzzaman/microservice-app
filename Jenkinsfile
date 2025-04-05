@@ -7,7 +7,7 @@ pipeline {
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1-a'
-        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${env.PATH}"
+        CLOUDSDK_PYTHON = '/usr/bin/python3' // Force Python 3.9 which is already installed
     }
     
     stages {
@@ -20,7 +20,7 @@ pipeline {
         stage('Verify Python') {
             steps {
                 script {
-                    sh 'python3 --version || brew install python@3.12'
+                    sh 'python3 --version'
                 }
             }
         }
@@ -28,34 +28,39 @@ pipeline {
         stage('Setup Google Cloud SDK') {
             steps {
                 script {
-                    // Check if gcloud exists in standard paths
-                    def gcloudExists = sh(script: 'which gcloud', returnStatus: true) == 0
+                    // Check if gcloud is already in PATH
+                    def gcloudInstalled = sh(script: 'command -v gcloud >/dev/null 2>&1', returnStatus: true) == 0
                     
-                    if (!gcloudExists) {
+                    if (!gcloudInstalled) {
                         echo "Installing Google Cloud SDK..."
                         
-                        // Download and install
+                        // Download specific version that works with Python 3.9
                         sh '''
                         curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
                         tar -xzf google-cloud-sdk.tar.gz
-                        ./google-cloud-sdk/install.sh --quiet \
-                            --usage-reporting=false \
-                            --path-update=true \
-                            --rc-path=$HOME/.bashrc \
-                            --bash-completion=false
-                        '''
                         
-                        // Source the path update
-                        sh 'source $HOME/.bashrc'
+                        # Install with minimal components
+                        ./google-cloud-sdk/install.sh \
+                            --quiet \
+                            --usage-reporting=false \
+                            --path-update=false \
+                            --command-completion=false \
+                            --override-components=core,gke-gcloud-auth-plugin
+                        
+                        # Explicitly add to PATH for current session
+                        export PATH="$PATH:$PWD/google-cloud-sdk/bin"
+                        '''
                     }
                     
-                    // Explicitly add to PATH for this session
-                    sh 'export PATH=$PATH:$PWD/google-cloud-sdk/bin'
+                    // Always update PATH in current session
+                    sh 'export PATH="$PATH:$PWD/google-cloud-sdk/bin"'
                     
-                    // Authenticate
-                    sh 'gcloud auth activate-service-account --key-file=$GKE_CREDS'
-                    sh 'gcloud config set project $PROJECT_ID'
-                    sh 'gcloud --version'
+                    // Authenticate with service account
+                    sh '''
+                    gcloud auth activate-service-account --key-file=$GKE_CREDS
+                    gcloud config set project $PROJECT_ID
+                    gcloud --version
+                    '''
                 }
             }
         }
@@ -71,9 +76,11 @@ pipeline {
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    sh 'mkdir -p $DOCKER_CONFIG'
-                    sh 'echo \'{"credsStore":""}\' > $DOCKER_CONFIG/config.json'
-                    sh 'echo $DOCKER_HUB_CREDS_PSW | docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
+                    sh '''
+                    mkdir -p $DOCKER_CONFIG
+                    echo '{"credsStore":""}' > $DOCKER_CONFIG/config.json
+                    echo $DOCKER_HUB_CREDS_PSW | docker login -u $DOCKER_HUB_CREDS_USR --password-stdin
+                    '''
                     
                     dir('docker/prometheus') {
                         sh 'docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
