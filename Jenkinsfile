@@ -22,8 +22,8 @@ pipeline {
             steps {
                 script {
                     sh """
-                    gcloud auth activate-service-account --key-file=${GKE_CREDS}
-                    gcloud config set project ${PROJECT_ID}
+                    gcloud auth activate-service-account --key-file=\$GKE_CREDS
+                    gcloud config set project \$PROJECT_ID
                     """
                 }
             }
@@ -39,21 +39,21 @@ pipeline {
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
                         sh """
-                        mkdir -p ${DOCKER_CONFIG}
-                        echo '{"auths":{"https://index.docker.io/v1/":{"auth":"$(echo -n ${DOCKER_USER}:${DOCKER_PASS} | base64)"}}}' > ${DOCKER_CONFIG}/config.json
-                        ${DOCKER_PATH}/docker login -u ${DOCKER_USER} -p ${DOCKER_PASS} || true
+                        mkdir -p \$DOCKER_CONFIG
+                        echo '{"auths":{"https://index.docker.io/v1/":{"auth":"\$(echo -n \$DOCKER_USER:\$DOCKER_PASS | base64)"}}}' > \$DOCKER_CONFIG/config.json
+                        \$DOCKER_PATH/docker login -u \$DOCKER_USER -p \$DOCKER_PASS || true
                         """
                     }
 
                     // Build and push images
                     dir('docker/prometheus') {
-                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
-                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-prometheus-server:latest"
+                        sh "\$DOCKER_PATH/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
+                        sh "\$DOCKER_PATH/docker push devops8080/spring-petclinic-prometheus-server:latest"
                     }
 
                     dir('docker/grafana') {
-                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-grafana-server:latest ."
-                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-grafana-server:latest"
+                        sh "\$DOCKER_PATH/docker build -t devops8080/spring-petclinic-grafana-server:latest ."
+                        sh "\$DOCKER_PATH/docker push devops8080/spring-petclinic-grafana-server:latest"
                     }
                 }
             }
@@ -64,12 +64,12 @@ pipeline {
                 script {
                     // Get cluster credentials with retry logic
                     sh """
-                    gcloud container clusters get-credentials ${CLUSTER_NAME} \
-                        --region ${REGION} \
-                        --project ${PROJECT_ID} || \
-                    gcloud container clusters get-credentials ${CLUSTER_NAME} \
-                        --zone ${REGION}-a \
-                        --project ${PROJECT_ID}
+                    gcloud container clusters get-credentials \$CLUSTER_NAME \\
+                        --region \$REGION \\
+                        --project \$PROJECT_ID || \\
+                    gcloud container clusters get-credentials \$CLUSTER_NAME \\
+                        --zone \$REGION-a \\
+                        --project \$PROJECT_ID
                     """
 
                     // Apply all Kubernetes manifests
@@ -100,7 +100,7 @@ pipeline {
 
     post {
         always {
-            sh "${DOCKER_PATH}/docker logout || true"
+            sh "\$DOCKER_PATH/docker logout || true"
         }
         success {
             echo '✅ Deployment successful! Access your services using:'
