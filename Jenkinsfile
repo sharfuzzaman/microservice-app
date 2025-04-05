@@ -50,7 +50,11 @@ pipeline {
     }
     post {
         always {
-            sh 'docker logout'
+            script {
+                node {
+                    sh 'docker logout'
+                }
+            }
         }
         success {
             echo 'Deployment to GKE completed successfully!'
