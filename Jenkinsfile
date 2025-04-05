@@ -8,44 +8,43 @@ pipeline {
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1'
         CLOUDSDK_PYTHON = '/usr/bin/python3'
-        DOCKER_PATH = '/usr/local/bin'
+        DOCKER_PATH = '/usr/local/bin'  // Confirmed from your which docker output
     }
 
     stages {
         stage('Install Prerequisites') {
             steps {
                 script {
-                    // Install Google Cloud SDK with forced PATH update
+                    // Install Google Cloud SDK if not available
                     sh '''
-                    # Remove any existing installation
-                    rm -rf google-cloud-sdk google-cloud-sdk.tar.gz
-                    
-                    # Download and install
-                    curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
-                    tar -xzf google-cloud-sdk.tar.gz
-                    
-                    # Install with PATH update
-                    ./google-cloud-sdk/install.sh \
-                        --quiet \
-                        --usage-reporting=false \
-                        --path-update=true \
-                        --rc-path="$HOME/.bashrc" \
-                        --command-completion=false
-                    
-                    # Explicitly add to current PATH
-                    export PATH="$PATH:$PWD/google-cloud-sdk/bin"
-                    echo "PATH updated to: $PATH"
-                    
-                    # Install required components
-                    ./google-cloud-sdk/bin/gcloud components install kubectl gke-gcloud-auth-plugin --quiet
+                    if ! command -v gcloud &> /dev/null; then
+                        echo "Installing Google Cloud SDK..."
+                        curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
+                        tar -xzf google-cloud-sdk.tar.gz
+                        ./google-cloud-sdk/install.sh \
+                            --quiet \
+                            --usage-reporting=false \
+                            --path-update=true \
+                            --command-completion=false
+                        source ~/.bashrc
+                    fi
                     '''
                     
-                    // Verify installations
-                    sh '''
-                    $PWD/google-cloud-sdk/bin/gcloud --version
-                    $PWD/google-cloud-sdk/bin/kubectl version --client
-                    docker --version
-                    '''
+                    // Verify Docker is installed and accessible
+                    sh """
+                    if ! command -v docker &> /dev/null; then
+                        echo "ERROR: Docker not found at \${DOCKER_PATH}/docker"
+                        echo "Please install Docker Desktop for Mac and ensure it's in your PATH"
+                        exit 127
+                    fi
+                    """
+                    
+                    // Verify all tools
+                    sh """
+                    $PWD/google-cloud-sdk/bin/gcloud --version || exit 1
+                    $PWD/google-cloud-sdk/bin/kubectl version --client || exit 1
+                    ${DOCKER_PATH}/docker --version || exit 1
+                    """
                 }
             }
         }
@@ -72,18 +71,18 @@ pipeline {
                         sh """
                         mkdir -p \$DOCKER_CONFIG
                         echo '{"auths":{"https://index.docker.io/v1/":{"auth":"\$(echo -n \$DOCKER_USER:\$DOCKER_PASS | base64)"}}}' > \$DOCKER_CONFIG/config.json
-                        \$DOCKER_PATH/docker login -u \$DOCKER_USER -p \$DOCKER_PASS || true
+                        ${DOCKER_PATH}/docker login -u \$DOCKER_USER -p \$DOCKER_PASS || true
                         """
                     }
 
                     dir('docker/prometheus') {
-                        sh "\$DOCKER_PATH/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
-                        sh "\$DOCKER_PATH/docker push devops8080/spring-petclinic-prometheus-server:latest"
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-prometheus-server:latest"
                     }
 
                     dir('docker/grafana') {
-                        sh "\$DOCKER_PATH/docker build -t devops8080/spring-petclinic-grafana-server:latest ."
-                        sh "\$DOCKER_PATH/docker push devops8080/spring-petclinic-grafana-server:latest"
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-grafana-server:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-grafana-server:latest"
                     }
                 }
             }
@@ -120,7 +119,7 @@ pipeline {
 
     post {
         always {
-            sh "\$DOCKER_PATH/docker logout || true"
+            sh "${DOCKER_PATH}/docker logout || true"
         }
     }
 }
