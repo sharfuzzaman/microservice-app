@@ -1,5 +1,5 @@
 pipeline {
-    agent any  // Agent for the entire pipeline
+    agent { label 'master' }  // Agent for the entire pipeline
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')  // Matches your credential ID
         GKE_CREDS = credentials('gke-credentials')              // Matches your GKE credential ID
