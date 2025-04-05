@@ -9,7 +9,7 @@ pipeline {
         REGION = 'europe-north1'
         CLOUDSDK_PYTHON = '/usr/bin/python3'
         DOCKER_PATH = '/usr/local/bin'
-        KUBECONFIG = "\$WORKSPACE/kubeconfig"
+        KUBECONFIG = "$WORKSPACE/kubeconfig"
     }
 
     stages {
@@ -17,6 +17,7 @@ pipeline {
             steps {
                 script {
                     sh '''
+                    # Install Google Cloud SDK if not available
                     if ! command -v gcloud &> /dev/null; then
                         echo "Installing Google Cloud SDK..."
                         curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
@@ -27,14 +28,19 @@ pipeline {
                             --path-update=true \\
                             --command-completion=false
                         
-                        ./google-cloud-sdk/bin/gcloud components install kubectl --quiet
+                        # Install required components including the auth plugin
+                        ./google-cloud-sdk/bin/gcloud components install \\
+                            kubectl \\
+                            gke-gcloud-auth-plugin \\
+                            --quiet
                         
-                        export PATH="\$PATH:\$PWD/google-cloud-sdk/bin"
+                        export PATH="$PATH:$PWD/google-cloud-sdk/bin"
                         source ~/.bash_profile
                     fi
                     '''
                     
                     sh """
+                    # Verify Docker is installed
                     if ! command -v ${DOCKER_PATH}/docker &> /dev/null; then
                         echo "ERROR: Docker not found at ${DOCKER_PATH}/docker"
                         exit 127
@@ -49,41 +55,19 @@ pipeline {
             steps {
                 script {
                     sh """
+                    # Authenticate with service account
                     ./google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=\$GKE_CREDS
                     ./google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
                     ./google-cloud-sdk/bin/gcloud config set compute/region \$REGION
                     
+                    # Get cluster credentials with the new auth plugin
                     ./google-cloud-sdk/bin/gcloud container clusters get-credentials \$CLUSTER_NAME \\
                         --region \$REGION \\
                         --project \$PROJECT_ID \\
                         --internal-ip
                     
-                    cat > \$KUBECONFIG <<EOF
-apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority-data: \$(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(masterAuth.clusterCaCertificate)")
-    server: https://\$(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(privateClusterConfig.privateEndpoint)")
-  name: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
-contexts:
-- context:
-    cluster: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
-    user: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
-  name: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
-current-context: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
-kind: Config
-preferences: {}
-users:
-- name: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
-  user:
-    auth-provider:
-      config:
-        cmd-args: config config-helper --format=json
-        cmd-path: \$PWD/google-cloud-sdk/bin/gcloud
-        expiry-key: '{.credential.token_expiry}'
-        token-key: '{.credential.access_token}'
-      name: gcp
-EOF
+                    # Verify authentication
+                    ./google-cloud-sdk/bin/kubectl config current-context
                     """
                 }
             }
@@ -121,9 +105,10 @@ EOF
             steps {
                 script {
                     sh """
-                    export KUBECONFIG=\$KUBECONFIG
-                    export GOOGLE_APPLICATION_CREDENTIALS=\$GKE_CREDS
+                    # Ensure the auth plugin is in PATH
+                    export PATH="\$PATH:$PWD/google-cloud-sdk/bin"
                     
+                    # Deploy all components
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/config-server.yaml
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/discovery-server.yaml
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/customers-service.yaml
@@ -136,6 +121,7 @@ EOF
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/grafana-server.yaml
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/prometheus-server.yaml
                     
+                    # Verify deployment
                     ./google-cloud-sdk/bin/kubectl get pods
                     """
                 }
