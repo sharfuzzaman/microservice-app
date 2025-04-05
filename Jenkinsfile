@@ -15,6 +15,22 @@ pipeline {
             }
         }
         
+        stage('Install Python 3.12') {
+            steps {
+                script {
+                    // Ensure Python 3.12 is installed if it's not already
+                    sh '''#!/bin/bash
+                    if ! command -v python3 &> /dev/null; then
+                        echo "Python 3 is not installed. Installing Python 3.12..."
+                        brew install python@3.12
+                    else
+                        echo "Python 3 is already installed."
+                    fi
+                    '''
+                }
+            }
+        }
+        
         stage('Install Google Cloud SDK') {
             steps {
                 script {
