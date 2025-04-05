@@ -12,9 +12,29 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
+        stage('Install Prerequisites') {
             steps {
-                git url: 'https://github.com/sharfuzzaman/microservice-app.git', branch: 'main'
+                script {
+                    // Install Google Cloud SDK if not available
+                    sh '''
+                    if ! command -v gcloud &> /dev/null; then
+                        echo "Installing Google Cloud SDK..."
+                        curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
+                        tar -xzf google-cloud-sdk.tar.gz
+                        ./google-cloud-sdk/install.sh --quiet \
+                            --usage-reporting=false \
+                            --path-update=true
+                        source ~/.bashrc
+                    fi
+                    '''
+                    
+                    // Verify installations
+                    sh '''
+                    gcloud --version || exit 1
+                    kubectl version --client || exit 1
+                    docker --version || exit 1
+                    '''
+                }
             }
         }
 
@@ -32,7 +52,6 @@ pipeline {
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    // Secure Docker login with credentials
                     withCredentials([usernamePassword(
                         credentialsId: 'docker-hub-cred',
                         usernameVariable: 'DOCKER_USER',
@@ -45,7 +64,6 @@ pipeline {
                         """
                     }
 
-                    // Build and push images
                     dir('docker/prometheus') {
                         sh "\$DOCKER_PATH/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
                         sh "\$DOCKER_PATH/docker push devops8080/spring-petclinic-prometheus-server:latest"
@@ -62,7 +80,6 @@ pipeline {
         stage('Deploy to GKE') {
             steps {
                 script {
-                    // Get cluster credentials with retry logic
                     sh """
                     gcloud container clusters get-credentials \$CLUSTER_NAME \\
                         --region \$REGION \\
@@ -72,26 +89,17 @@ pipeline {
                         --project \$PROJECT_ID
                     """
 
-                    // Apply all Kubernetes manifests
                     def k8sManifests = [
-                        'config-server',
-                        'discovery-server',
-                        'customers-service',
-                        'visits-service',
-                        'vets-service',
-                        'genai-service',
-                        'api-gateway',
-                        'tracing-server',
-                        'admin-server',
-                        'grafana-server',
-                        'prometheus-server'
+                        'config-server', 'discovery-server', 'customers-service',
+                        'visits-service', 'vets-service', 'genai-service',
+                        'api-gateway', 'tracing-server', 'admin-server',
+                        'grafana-server', 'prometheus-server'
                     ]
 
                     k8sManifests.each { manifest ->
                         sh "kubectl apply -f k8s/${manifest}.yaml"
                     }
 
-                    // Verify deployment
                     sh "kubectl get pods --watch"
                 }
             }
@@ -103,15 +111,15 @@ pipeline {
             sh "\$DOCKER_PATH/docker logout || true"
         }
         success {
-            echo '✅ Deployment successful! Access your services using:'
+            echo '✅ Deployment successful!'
             sh """
-            echo -n 'API Gateway: ' && kubectl get svc api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-            echo -n 'Grafana: ' && kubectl get svc grafana-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+            echo 'API Gateway IP: ' \$(kubectl get svc api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            echo 'Grafana IP: ' \$(kubectl get svc grafana-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             """
         }
         failure {
-            echo '❌ Pipeline failed. Check logs above for details.'
-            sh "kubectl get events --sort-by='.lastTimestamp'"
+            echo '❌ Pipeline failed'
+            sh "kubectl get events --sort-by=.lastTimestamp || true"
         }
     }
 }
