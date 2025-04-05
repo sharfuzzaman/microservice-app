@@ -1,5 +1,5 @@
 pipeline {
-    agent any
+    agent any  // Use any available node (works for Built-In Node)
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
         GKE_CREDS = credentials('gke-credentials')
@@ -23,7 +23,7 @@ pipeline {
                     }
                     dir('docker/grafana') {
                         sh 'docker build -t devops8080/spring-petclinic-grafana-server:latest .'
-                        sh 'docker push devops8080/spring-petclinic-prometheus-server:latest'
+                        sh 'docker push devops8080/spring-petclinic-grafana-server:latest'
                     }
                 }
             }
@@ -50,9 +50,7 @@ pipeline {
     }
     post {
         always {
-            node('Jenkins') {  // Match the node name from logs
-                sh 'docker logout'
-            }
+            sh 'docker logout'  // Rely on pipeline-level agent any
         }
         success {
             echo 'Deployment to GKE completed successfully!'
