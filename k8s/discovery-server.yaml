@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: discovery-server
-        image: springcommunity/spring-petclinic-discovery-server:latest
+        image: devops8080/spring-petclinic-discovery-server:latest
         resources:
           limits:
             memory: "512Mi"

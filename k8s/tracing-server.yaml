@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: tracing-server
-        image: openzipkin/zipkin:latest
+        image: devops8080/zipkin:latest
         resources:
           limits:
             memory: "512Mi"

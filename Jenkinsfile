@@ -94,14 +94,52 @@ pipeline {
                         """
                     }
 
+                    // Prometheus
                     dir('docker/prometheus') {
                         sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-prometheus-server:latest ."
                         sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-prometheus-server:latest"
                     }
 
+                    // Grafana
                     dir('docker/grafana') {
                         sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-grafana-server:latest ."
                         sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-grafana-server:latest"
+                    }
+
+                    // Config Server
+                    dir('docker/config-server') {
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-config-server:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-config-server:latest"
+                    }
+
+                    // Discovery Server (Eureka)
+                    dir('docker/discovery-server') {
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-discovery-server:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-discovery-server:latest"
+                    }
+
+                    // API Gateway
+                    dir('docker/api-gateway') {
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-api-gateway:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-api-gateway:latest"
+                    }
+
+                    // Customers Service
+                    dir('docker/customers-service') {
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-customers-service:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-customers-service:latest"
+                    }
+
+                    // Vets Service
+                    dir('docker/vets-service') {
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-vets-service:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-vets-service:latest"
+                    }
+
+                    // Visits Service
+                    dir('docker/visits-service') {
+                        sh "${DOCKER_PATH}/docker build -t devops8080/spring-petclinic-visits-service:latest ."
+                        sh "${DOCKER_PATH}/docker push devops8080/spring-petclinic-visits-service:latest"
                     }
                 }
             }

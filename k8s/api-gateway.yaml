@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: api-gateway
-        image: springcommunity/spring-petclinic-api-gateway:latest
+        image: devops8080/spring-petclinic-api-gateway:latest
         resources:
           limits:
             memory: "512Mi"

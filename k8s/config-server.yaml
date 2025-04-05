@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: config-server
-        image: springcommunity/spring-petclinic-config-server:latest
+        image: devops8080/spring-petclinic-config-server:latest
         resources:
           limits:
             memory: "512Mi"

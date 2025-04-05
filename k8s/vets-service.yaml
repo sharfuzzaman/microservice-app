@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: vets-service
-        image: springcommunity/spring-petclinic-vets-service:latest
+        image: devops8080/spring-petclinic-vets-service:latest
         resources:
           limits:
             memory: "512Mi"

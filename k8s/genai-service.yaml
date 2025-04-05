@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: genai-service
-        image: springcommunity/spring-petclinic-genai-service:latest
+        image: devops8080/spring-petclinic-genai-service:latest
         resources:
           limits:
             memory: "512Mi"
