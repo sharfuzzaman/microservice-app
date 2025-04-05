@@ -2,7 +2,7 @@ pipeline {
     agent any
     environment {
         // Set paths for Python, Docker, and Google Cloud SDK tools
-        PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
+        PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/local/bin/google-cloud-sdk:${env.PATH}" // Ensure the gcloud SDK path is included
         DOCKER_CONFIG = '/tmp/docker-config'
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-cred')
@@ -18,6 +18,24 @@ pipeline {
             }
         }
         
+        stage('Install Google Cloud SDK') {
+            steps {
+                script {
+                    // Check if gcloud is installed, install if not
+                    sh '''
+                    if ! command -v gcloud &> /dev/null; then
+                        echo "gcloud not found! Installing Google Cloud SDK..."
+                        curl https://sdk.cloud.google.com | bash
+                        source ~/.bash_profile
+                        echo "Google Cloud SDK installed."
+                    else
+                        echo "gcloud is already installed."
+                    fi
+                    '''
+                }
+            }
+        }
+
         stage('Install Python 3.12') {
             steps {
                 script {
@@ -60,7 +78,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Verify Python and Google Cloud SDK') {
             steps {
                 script {
