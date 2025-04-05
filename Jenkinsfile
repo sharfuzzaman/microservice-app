@@ -15,49 +15,53 @@ pipeline {
             }
         }
         
-        stage('Install Python 3.12') {
+        stage('Verify Python 3.12') {
             steps {
                 script {
-                    // Ensure Python 3.12 is installed if it's not already
-                    sh '''#!/bin/bash
-                    if ! command -v python3 &> /dev/null; then
-                        echo "Python 3 is not installed. Installing Python 3.12..."
-                        brew install python@3.12
-                    else
-                        echo "Python 3 is already installed."
-                    fi
-                    '''
+                    def pythonInstalled = sh(script: 'command -v python3.12 || command -v python3', returnStatus: true) == 0
+                    if (!pythonInstalled) {
+                        echo "Python 3.12 not found. Installing..."
+                        sh 'brew install python@3.12'
+                    } else {
+                        echo "Python 3.12 is already installed."
+                        sh 'python3 --version'
+                    }
                 }
             }
         }
         
-        stage('Install Google Cloud SDK') {
+        stage('Verify Google Cloud SDK') {
             steps {
                 script {
-                    // Download the Google Cloud SDK tar file
-                    sh 'curl -# -f https://dl.google.com/dl/cloudsdk/channels/rapid/google-cloud-sdk.tar.gz -o google-cloud-sdk.tar.gz'
-                    
-                    // Extract the downloaded tar.gz file
-                    sh 'tar -xvzf google-cloud-sdk.tar.gz'
-                    
-                    // Install Google Cloud SDK and automatically accept the Python 3.12 installation prompt
-                    sh '''#!/bin/bash
-                    ./google-cloud-sdk/install.sh --usage-reporting=false --path-update=false --bash-completion=false <<EOF
+                    def gcloudInstalled = sh(script: 'command -v gcloud', returnStatus: true) == 0
+                    if (!gcloudInstalled) {
+                        echo "Google Cloud SDK not found. Installing..."
+                        // Download the Google Cloud SDK tar file
+                        sh 'curl -# -f https://dl.google.com/dl/cloudsdk/channels/rapid/google-cloud-sdk.tar.gz -o google-cloud-sdk.tar.gz'
+                        
+                        // Extract the downloaded tar.gz file
+                        sh 'tar -xvzf google-cloud-sdk.tar.gz'
+                        
+                        // Install Google Cloud SDK
+                        sh '''#!/bin/bash
+                        ./google-cloud-sdk/install.sh --usage-reporting=false --path-update=false --bash-completion=false <<EOF
 y
 EOF
-                    '''
+                        '''
+                        
+                        // Update PATH for the current session
+                        sh 'export PATH=$PATH:$(pwd)/google-cloud-sdk/bin'
+                    } else {
+                        echo "Google Cloud SDK is already installed."
+                        sh 'gcloud --version'
+                    }
                     
-                    // Initialize Google Cloud SDK
-                    sh './google-cloud-sdk/bin/gcloud init --skip-diagnostics'
-                    
-                    // Update PATH for the gcloud command
-                    sh 'echo "source $(pwd)/google-cloud-sdk/path.bash.inc" >> ~/.bashrc'
-                    
-                    // Reload the shell configuration
-                    sh 'source ~/.bashrc'
-                    
-                    // Verify Google Cloud SDK installation
-                    sh 'gcloud --version'
+                    // Initialize Google Cloud SDK if not already initialized
+                    def gcloudInitialized = sh(script: 'gcloud config list --format="value(core.account)"', returnStatus: true) == 0
+                    if (!gcloudInitialized) {
+                        echo "Initializing Google Cloud SDK..."
+                        sh './google-cloud-sdk/bin/gcloud init --skip-diagnostics'
+                    }
                 }
             }
         }
@@ -94,17 +98,11 @@ EOF
                 script {
                     sh 'gcloud auth activate-service-account --key-file=$GKE_CREDS'
                     sh "gcloud container clusters get-credentials $CLUSTER_NAME --region $REGION --project $PROJECT_ID"
-                    sh 'kubectl apply -f k8s/config-server.yaml'
-                    sh 'kubectl apply -f k8s/discovery-server.yaml'
-                    sh 'kubectl apply -f k8s/customers-service.yaml'
-                    sh 'kubectl apply -f k8s/visits-service.yaml'
-                    sh 'kubectl apply -f k8s/vets-service.yaml'
-                    sh 'kubectl apply -f k8s/genai-service.yaml'
-                    sh 'kubectl apply -f k8s/api-gateway.yaml'
-                    sh 'kubectl apply -f k8s/tracing-server.yaml'
-                    sh 'kubectl apply -f k8s/admin-server.yaml'
-                    sh 'kubectl apply -f k8s/grafana-server.yaml'
-                    sh 'kubectl apply -f k8s/prometheus-server.yaml'
+                    ['config-server', 'discovery-server', 'customers-service', 'visits-service', 
+                     'vets-service', 'genai-service', 'api-gateway', 'tracing-server', 
+                     'admin-server', 'grafana-server', 'prometheus-server'].each { service ->
+                        sh "kubectl apply -f k8s/${service}.yaml"
+                    }
                 }
             }
         }
