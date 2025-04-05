@@ -3,20 +3,20 @@ pipeline {
     environment {
         DOCKER_CONFIG = '/tmp/docker-config'
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
-        GKE_CREDS = credentials('gke-cred')
+        GKE_CREDS = credentials('gke-cred') // This is your service account JSON file
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1'
         CLOUDSDK_PYTHON = '/usr/bin/python3'
         DOCKER_PATH = '/usr/local/bin'
-        GOOGLE_APPLICATION_CREDENTIALS = credentials('gke-cred')
+        KUBECONFIG = "$WORKSPACE/kubeconfig" // Custom kubeconfig location
     }
 
     stages {
         stage('Install Tools') {
             steps {
                 script {
-                    // Install Google Cloud SDK with all required components
+                    // Install Google Cloud SDK if not available
                     sh '''
                     if ! command -v gcloud &> /dev/null; then
                         echo "Installing Google Cloud SDK..."
@@ -29,12 +29,9 @@ pipeline {
                             --command-completion=false
                         
                         # Install required components
-                        ./google-cloud-sdk/bin/gcloud components install \
-                            kubectl \
-                            gke-gcloud-auth-plugin \
-                            --quiet
+                        ./google-cloud-sdk/bin/gcloud components install kubectl --quiet
                         
-                        # Update PATH for current session
+                        # Update PATH
                         export PATH="$PATH:$PWD/google-cloud-sdk/bin"
                         source ~/.bash_profile
                     fi
@@ -61,14 +58,39 @@ pipeline {
                     ./google-cloud-sdk/bin/gcloud config set project \$PROJECT_ID
                     ./google-cloud-sdk/bin/gcloud config set compute/region \$REGION
                     
-                    # Generate kubeconfig with direct token authentication
+                    # Generate kubeconfig with direct authentication
                     ./google-cloud-sdk/bin/gcloud container clusters get-credentials \$CLUSTER_NAME \\
                         --region \$REGION \\
                         --project \$PROJECT_ID \\
                         --internal-ip
                     
-                    # Modify kubeconfig to use direct token authentication
-                    sed -i '' 's/exec: \"gke-gcloud-auth-plugin\"/exec: \"gcloud\", \"container\", \"print-access-token\" |/' \$HOME/.kube/config
+                    # Create custom kubeconfig with direct token access
+                    cat > \$KUBECONFIG <<EOF
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: $(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(masterAuth.clusterCaCertificate)")
+    server: https://$(./google-cloud-sdk/bin/gcloud container clusters describe \$CLUSTER_NAME --region \$REGION --format="value(privateClusterConfig.privateEndpoint)")
+  name: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
+contexts:
+- context:
+    cluster: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
+    user: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
+  name: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
+current-context: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
+kind: Config
+preferences: {}
+users:
+- name: gke_\${PROJECT_ID}_\${REGION}_\${CLUSTER_NAME}
+  user:
+    auth-provider:
+      config:
+        cmd-args: config config-helper --format=json
+        cmd-path: $PWD/google-cloud-sdk/bin/gcloud
+        expiry-key: '{.credential.token_expiry}'
+        token-key: '{.credential.access_token}'
+      name: gcp
+EOF
                     """
                 }
             }
@@ -105,9 +127,9 @@ pipeline {
         stage('Deploy to GKE') {
             steps {
                 script {
-                    // Use direct authentication with service account
+                    // Use our custom kubeconfig with direct authentication
                     sh """
-                    export KUBECONFIG=\$HOME/.kube/config
+                    export KUBECONFIG=\$KUBECONFIG
                     export GOOGLE_APPLICATION_CREDENTIALS=\$GKE_CREDS
                     
                     ./google-cloud-sdk/bin/kubectl apply -f k8s/config-server.yaml
