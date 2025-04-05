@@ -2,7 +2,7 @@ pipeline {
     agent any
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
-        GKE_CREDS = credentials('gke-credentials')
+        GKE_CREDS = credentials('gke-cred')
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1-a'
