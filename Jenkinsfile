@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'Built-In Node' }  // Explicitly use the Built-In Node
+    agent { label '' }  // Match any node with no specific label (should pick Built-In Node)
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
         GKE_CREDS = credentials('gke-credentials')
