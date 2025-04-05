@@ -43,17 +43,19 @@ pipeline {
                 }
             }
         }
-        stage ('Verify gcloud'){
+        stage('Verify Python and Google Cloud SDK') {
             steps {
                 script {
-                    // Example of verifying the path and checking if gcloud works
+                    // Check the versions of Python and gcloud to verify setup
                     sh '''#!/bin/bash
                     echo "Current PATH: $PATH"
+                    python3 --version
                     gcloud --version
                     '''
                 }
             }
         }
+        
         stage('Deploy to GKE') {
             steps {
                 script {
