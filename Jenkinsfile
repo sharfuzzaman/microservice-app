@@ -7,7 +7,9 @@ pipeline {
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1-a'
+        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${env.PATH}"
     }
+    
     stages {
         stage('Checkout') {
             steps {
@@ -15,15 +17,16 @@ pipeline {
             }
         }
         
-        stage('Verify Python 3.12') {
+        stage('Verify Python') {
             steps {
                 script {
-                    def pythonInstalled = sh(script: 'command -v python3.12 || command -v python3', returnStatus: true) == 0
+                    def pythonInstalled = sh(script: 'python3 --version', returnStatus: true) == 0
                     if (!pythonInstalled) {
-                        echo "Python 3.12 not found. Installing..."
+                        echo "Python 3 not found. Installing Python 3.12..."
                         sh 'brew install python@3.12'
+                        sh 'ln -s /usr/local/opt/python@3.12/bin/python3 /usr/local/bin/python3'
                     } else {
-                        echo "Python 3.12 is already installed."
+                        echo "Python 3 is already installed."
                         sh 'python3 --version'
                     }
                 }
@@ -33,35 +36,54 @@ pipeline {
         stage('Verify Google Cloud SDK') {
             steps {
                 script {
-                    def gcloudInstalled = sh(script: 'command -v gcloud', returnStatus: true) == 0
+                    // Check if gcloud exists in standard paths or workspace
+                    def gcloudInstalled = sh(script: '''
+                        if command -v gcloud >/dev/null 2>&1; then
+                            exit 0
+                        elif [ -f "${WORKSPACE}/google-cloud-sdk/bin/gcloud" ]; then
+                            exit 0
+                        else
+                            exit 1
+                        fi
+                    ''', returnStatus: true) == 0
+                    
                     if (!gcloudInstalled) {
                         echo "Google Cloud SDK not found. Installing..."
-                        // Download the Google Cloud SDK tar file
-                        sh 'curl -# -f https://dl.google.com/dl/cloudsdk/channels/rapid/google-cloud-sdk.tar.gz -o google-cloud-sdk.tar.gz'
                         
-                        // Extract the downloaded tar.gz file
-                        sh 'tar -xvzf google-cloud-sdk.tar.gz'
+                        // Download and install minimal components
+                        sh '''
+                        curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/google-cloud-sdk.tar.gz -o google-cloud-sdk.tar.gz
+                        tar -xzf google-cloud-sdk.tar.gz
+                        ./google-cloud-sdk/install.sh \
+                            --usage-reporting=false \
+                            --path-update=true \
+                            --bash-completion=false \
+                            --command-completion=false \
+                            --quiet \
+                            --override-components=core,gke-gcloud-auth-plugin
                         
-                        // Install Google Cloud SDK
-                        sh '''#!/bin/bash
-                        ./google-cloud-sdk/install.sh --usage-reporting=false --path-update=false --bash-completion=false <<EOF
-y
-EOF
+                        # Add to PATH for current session
+                        export PATH="${PATH}:${PWD}/google-cloud-sdk/bin"
                         '''
-                        
-                        // Update PATH for the current session
-                        sh 'export PATH=$PATH:$(pwd)/google-cloud-sdk/bin'
-                    } else {
-                        echo "Google Cloud SDK is already installed."
-                        sh 'gcloud --version'
                     }
                     
-                    // Initialize Google Cloud SDK if not already initialized
-                    def gcloudInitialized = sh(script: 'gcloud config list --format="value(core.account)"', returnStatus: true) == 0
-                    if (!gcloudInitialized) {
-                        echo "Initializing Google Cloud SDK..."
-                        sh './google-cloud-sdk/bin/gcloud init --skip-diagnostics'
+                    // Make sure gcloud is in PATH
+                    sh 'export PATH="${PATH}:${PWD}/google-cloud-sdk/bin"'
+                    
+                    // Check if already authenticated
+                    def gcloudAuthed = sh(
+                        script: 'gcloud auth list --format="value(account)" | grep -q "."',
+                        returnStatus: true
+                    ) == 0
+                    
+                    if (!gcloudAuthed) {
+                        echo "Authenticating with service account..."
+                        sh 'gcloud auth activate-service-account --key-file=$GKE_CREDS'
                     }
+                    
+                    // Verify installation
+                    sh 'gcloud --version'
+                    sh 'gcloud config set project $PROJECT_ID'
                 }
             }
         }
@@ -69,9 +91,8 @@ EOF
         stage('Verify Docker') {
             steps {
                 script {
-                    sh 'echo $PATH'
-                    sh '/usr/local/bin/docker --version'
-                    sh 'command -v /usr/local/bin/docker'
+                    sh 'docker --version'
+                    sh 'command -v docker'
                 }
             }
         }
@@ -79,15 +100,18 @@ EOF
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    sh 'mkdir -p /tmp/docker-config && echo \'{"credsStore":""}\' > /tmp/docker-config/config.json'
-                    sh 'echo $DOCKER_HUB_CREDS_PSW | /usr/local/bin/docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
+                    sh 'mkdir -p $DOCKER_CONFIG'
+                    sh 'echo \'{"credsStore":""}\' > $DOCKER_CONFIG/config.json'
+                    sh 'echo $DOCKER_HUB_CREDS_PSW | docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
+                    
                     dir('docker/prometheus') {
-                        sh '/usr/local/bin/docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
-                        sh '/usr/local/bin/docker push devops8080/spring-petclinic-prometheus-server:latest'
+                        sh 'docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
+                        sh 'docker push devops8080/spring-petclinic-prometheus-server:latest'
                     }
+                    
                     dir('docker/grafana') {
-                        sh '/usr/local/bin/docker build -t devops8080/spring-petclinic-grafana-server:latest .'
-                        sh '/usr/local/bin/docker push devops8080/spring-petclinic-grafana-server:latest'
+                        sh 'docker build -t devops8080/spring-petclinic-grafana-server:latest .'
+                        sh 'docker push devops8080/spring-petclinic-grafana-server:latest'
                     }
                 }
             }
@@ -96,13 +120,33 @@ EOF
         stage('Deploy to GKE') {
             steps {
                 script {
-                    sh 'gcloud auth activate-service-account --key-file=$GKE_CREDS'
-                    sh "gcloud container clusters get-credentials $CLUSTER_NAME --region $REGION --project $PROJECT_ID"
-                    ['config-server', 'discovery-server', 'customers-service', 'visits-service', 
-                     'vets-service', 'genai-service', 'api-gateway', 'tracing-server', 
-                     'admin-server', 'grafana-server', 'prometheus-server'].each { service ->
-                        sh "kubectl apply -f k8s/${service}.yaml"
+                    sh """
+                    gcloud container clusters get-credentials $CLUSTER_NAME \
+                        --region $REGION \
+                        --project $PROJECT_ID
+                    """
+                    
+                    // Apply all Kubernetes manifests
+                    def k8sManifests = [
+                        'config-server',
+                        'discovery-server',
+                        'customers-service',
+                        'visits-service',
+                        'vets-service',
+                        'genai-service',
+                        'api-gateway',
+                        'tracing-server',
+                        'admin-server',
+                        'grafana-server',
+                        'prometheus-server'
+                    ]
+                    
+                    k8sManifests.each { manifest ->
+                        sh "kubectl apply -f k8s/${manifest}.yaml"
                     }
+                    
+                    // Verify deployment
+                    sh 'kubectl get pods -w'
                 }
             }
         }
@@ -110,11 +154,7 @@ EOF
 
     post {
         always {
-            script {
-                withEnv(["PATH+DOCKER=/usr/local/bin"]) {
-                    sh 'docker logout'
-                }
-            }
+            sh 'docker logout'
         }
         success {
             echo 'Deployment to GKE completed successfully!'
