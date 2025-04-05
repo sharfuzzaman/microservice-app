@@ -5,6 +5,7 @@ pipeline {
     }
     environment {
         PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        DOCKER_CONFIG = '/tmp/docker-config'
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-cred')
         PROJECT_ID = 'thesis-work-455913'
@@ -29,7 +30,8 @@ pipeline {
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    sh 'echo $DOCKER_HUB_CREDS_PSW | /usr/local/bin/docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
+                    sh 'mkdir -p /tmp/docker-config && echo \'{"credsStore":""}\' > /tmp/docker-config/config.json'
+                     sh 'echo $DOCKER_HUB_CREDS_PSW | /usr/local/bin/docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
                     dir('docker/prometheus') {
                         sh '/usr/local/bin/docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
                         sh '/usr/local/bin/docker push devops8080/spring-petclinic-prometheus-server:latest'
@@ -69,7 +71,7 @@ pipeline {
     post {
         always {
             script {
-                node {
+                    withEnv(["PATH+DOCKER=/usr/local/bin"]) {
                     sh 'docker logout'
                 }
             }
