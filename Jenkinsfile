@@ -1,31 +1,29 @@
 pipeline {
-    agent any  // This assigns an agent to the entire pipeline
+    agent any  // Agent for the entire pipeline
     environment {
-        DOCKER_HUB_CREDS = credentials('docker-hub-cred')
-        GKE_CREDS = credentials('gke-credentials')
-        PROJECT_ID = 'thesis-work-455913'  // Replace with your GCP project ID
+        DOCKER_HUB_CREDS = credentials('docker-hub-credentials')  // Matches your credential ID
+        GKE_CREDS = credentials('gke-credentials')              // Matches your GKE credential ID
+        PROJECT_ID = 'thesis-work-455913'                          // Replace with your GCP project ID
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1-a'
     }
     stages {
         stage('Checkout') {
             steps {
-                // Checkout is fine without explicit node since agent any is at pipeline level
                 git url: 'https://github.com/yourusername/spring-petclinic-microservices.git', branch: 'main'
             }
         }
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    // Explicitly wrap sh steps in a node block if needed
                     sh 'echo $DOCKER_HUB_CREDS_PSW | docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
                     dir('docker/prometheus') {
-                        sh 'docker build -t sharfuzzamansajib/spring-petclinic-prometheus-server:latest .'
-                        sh 'docker push sharfuzzamansajib/spring-petclinic-prometheus-server:latest'
+                        sh 'docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
+                        sh 'docker push devops8080/spring-petclinic-prometheus-server:latest'
                     }
                     dir('docker/grafana') {
-                        sh 'docker build -t sharfuzzamansajib/spring-petclinic-grafana-server:latest .'
-                        sh 'docker push sharfuzzamansajib/spring-petclinic-grafana-server:latest'
+                        sh 'docker build -t devops8080/spring-petclinic-grafana-server:latest .'
+                        sh 'docker push devops8080/spring-petclinic-grafana-server:latest'
                     }
                 }
             }
@@ -52,7 +50,9 @@ pipeline {
     }
     post {
         always {
-            sh 'docker logout'
+            node('any') {  // Explicit node block for post actions
+                sh 'docker logout'
+            }
         }
         success {
             echo 'Deployment to GKE completed successfully!'
