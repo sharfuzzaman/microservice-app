@@ -1,5 +1,5 @@
 pipeline {
-    agent any  // Use any available node (should pick Built-In Node)
+    agent { label 'Built-In Node' }  // Explicitly use the Built-In Node
     environment {
         DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
         GKE_CREDS = credentials('gke-credentials')
@@ -50,7 +50,7 @@ pipeline {
     }
     post {
         always {
-            sh 'docker logout'  // Rely on pipeline-level agent
+            sh 'docker logout'
         }
         success {
             echo 'Deployment to GKE completed successfully!'
