@@ -3,15 +3,14 @@ pipeline {
     
     tools {
         gcloud 'gcloud-sdk' // Ensure Google Cloud SDK is set in Global Tool Configuration
-        python 'Python 3.12' // Ensure Python 3.12 is set in Global Tool Configuration
     }
 
     environment {
         // Update the PATH to prioritize Python 3.12 and Docker
         PATH = "/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/bin:/usr/local/bin:${env.PATH}" // Add Python 3.12 to PATH
         DOCKER_CONFIG = '/tmp/docker-config'
-        DOCKER_HUB_CREDS = credentials('docker-hub-cred')
-        GKE_CREDS = credentials('gke-cred')
+        DOCKER_HUB_CREDS = credentials('docker-hub-cred') // Jenkins credentials for Docker Hub login
+        GKE_CREDS = credentials('gke-cred') // Jenkins credentials for GKE
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1-a'
@@ -62,6 +61,9 @@ pipeline {
                     echo "Using Python from: $(which python3)"
                     python3 --version
                     '''
+                    
+                    // Ensure gcloud SDK is working
+                    sh 'gcloud --version'
                 }
             }
         }
