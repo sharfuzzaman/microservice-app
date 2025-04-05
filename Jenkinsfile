@@ -4,7 +4,7 @@ pipeline {
         gcloud 'gcloud-sdk'
     }
     environment {
-        PATH = "/usr/local/bin:$PATH"
+        PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-cred')
         PROJECT_ID = 'thesis-work-455913'
@@ -21,8 +21,8 @@ pipeline {
             steps {
                 script {
                     sh 'echo $PATH'
-                    sh 'command -v docker'
-                    sh 'docker --version'
+                    sh '/usr/local/bin/docker --version'
+                    sh 'command -v /usr/local/bin/docker'
                 }
             }
         }
