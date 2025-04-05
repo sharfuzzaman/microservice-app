@@ -7,7 +7,8 @@ pipeline {
         PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1-a'
-        CLOUDSDK_PYTHON = '/usr/bin/python3' // Force use of Python 3.9
+        CLOUDSDK_PYTHON = '/usr/bin/python3'
+        DOCKER_PATH = '/usr/local/bin' // Explicit path to Docker
     }
     
     stages {
@@ -73,7 +74,11 @@ pipeline {
         stage('Verify Docker') {
             steps {
                 script {
-                    sh 'docker --version'
+                    // Explicitly use the full Docker path
+                    sh '''
+                    $DOCKER_PATH/docker --version
+                    command -v $DOCKER_PATH/docker
+                    '''
                 }
             }
         }
@@ -84,17 +89,17 @@ pipeline {
                     sh '''
                     mkdir -p $DOCKER_CONFIG
                     echo '{"credsStore":""}' > $DOCKER_CONFIG/config.json
-                    echo $DOCKER_HUB_CREDS_PSW | docker login -u $DOCKER_HUB_CREDS_USR --password-stdin
+                    echo $DOCKER_HUB_CREDS_PSW | $DOCKER_PATH/docker login -u $DOCKER_HUB_CREDS_USR --password-stdin
                     '''
                     
                     dir('docker/prometheus') {
-                        sh 'docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
-                        sh 'docker push devops8080/spring-petclinic-prometheus-server:latest'
+                        sh '$DOCKER_PATH/docker build -t devops8080/spring-petclinic-prometheus-server:latest .'
+                        sh '$DOCKER_PATH/docker push devops8080/spring-petclinic-prometheus-server:latest'
                     }
                     
                     dir('docker/grafana') {
-                        sh 'docker build -t devops8080/spring-petclinic-grafana-server:latest .'
-                        sh 'docker push devops8080/spring-petclinic-grafana-server:latest'
+                        sh '$DOCKER_PATH/docker build -t devops8080/spring-petclinic-grafana-server:latest .'
+                        sh '$DOCKER_PATH/docker push devops8080/spring-petclinic-grafana-server:latest'
                     }
                 }
             }
@@ -133,7 +138,7 @@ pipeline {
 
     post {
         always {
-            sh 'docker logout || true'
+            sh '$DOCKER_PATH/docker logout || true'
         }
         success {
             echo 'Deployment to GKE completed successfully!'
