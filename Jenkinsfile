@@ -20,70 +20,42 @@ pipeline {
         stage('Verify Python') {
             steps {
                 script {
-                    def pythonInstalled = sh(script: 'python3 --version', returnStatus: true) == 0
-                    if (!pythonInstalled) {
-                        echo "Python 3 not found. Installing Python 3.12..."
-                        sh 'brew install python@3.12'
-                        sh 'ln -s /usr/local/opt/python@3.12/bin/python3 /usr/local/bin/python3'
-                    } else {
-                        echo "Python 3 is already installed."
-                        sh 'python3 --version'
-                    }
+                    sh 'python3 --version || brew install python@3.12'
                 }
             }
         }
         
-        stage('Verify Google Cloud SDK') {
+        stage('Setup Google Cloud SDK') {
             steps {
                 script {
-                    // Check if gcloud exists in standard paths or workspace
-                    def gcloudInstalled = sh(script: '''
-                        if command -v gcloud >/dev/null 2>&1; then
-                            exit 0
-                        elif [ -f "${WORKSPACE}/google-cloud-sdk/bin/gcloud" ]; then
-                            exit 0
-                        else
-                            exit 1
-                        fi
-                    ''', returnStatus: true) == 0
+                    // Check if gcloud exists in standard paths
+                    def gcloudExists = sh(script: 'which gcloud', returnStatus: true) == 0
                     
-                    if (!gcloudInstalled) {
-                        echo "Google Cloud SDK not found. Installing..."
+                    if (!gcloudExists) {
+                        echo "Installing Google Cloud SDK..."
                         
-                        // Download and install minimal components
+                        // Download and install
                         sh '''
-                        curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/google-cloud-sdk.tar.gz -o google-cloud-sdk.tar.gz
+                        curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-456.0.0-darwin-arm.tar.gz -o google-cloud-sdk.tar.gz
                         tar -xzf google-cloud-sdk.tar.gz
-                        ./google-cloud-sdk/install.sh \
+                        ./google-cloud-sdk/install.sh --quiet \
                             --usage-reporting=false \
                             --path-update=true \
-                            --bash-completion=false \
-                            --command-completion=false \
-                            --quiet \
-                            --override-components=core,gke-gcloud-auth-plugin
-                        
-                        # Add to PATH for current session
-                        export PATH="${PATH}:${PWD}/google-cloud-sdk/bin"
+                            --rc-path=$HOME/.bashrc \
+                            --bash-completion=false
                         '''
+                        
+                        // Source the path update
+                        sh 'source $HOME/.bashrc'
                     }
                     
-                    // Make sure gcloud is in PATH
-                    sh 'export PATH="${PATH}:${PWD}/google-cloud-sdk/bin"'
+                    // Explicitly add to PATH for this session
+                    sh 'export PATH=$PATH:$PWD/google-cloud-sdk/bin'
                     
-                    // Check if already authenticated
-                    def gcloudAuthed = sh(
-                        script: 'gcloud auth list --format="value(account)" | grep -q "."',
-                        returnStatus: true
-                    ) == 0
-                    
-                    if (!gcloudAuthed) {
-                        echo "Authenticating with service account..."
-                        sh 'gcloud auth activate-service-account --key-file=$GKE_CREDS'
-                    }
-                    
-                    // Verify installation
-                    sh 'gcloud --version'
+                    // Authenticate
+                    sh 'gcloud auth activate-service-account --key-file=$GKE_CREDS'
                     sh 'gcloud config set project $PROJECT_ID'
+                    sh 'gcloud --version'
                 }
             }
         }
@@ -92,7 +64,6 @@ pipeline {
             steps {
                 script {
                     sh 'docker --version'
-                    sh 'command -v docker'
                 }
             }
         }
@@ -146,7 +117,7 @@ pipeline {
                     }
                     
                     // Verify deployment
-                    sh 'kubectl get pods -w'
+                    sh 'kubectl get pods'
                 }
             }
         }
@@ -154,7 +125,7 @@ pipeline {
 
     post {
         always {
-            sh 'docker logout'
+            sh 'docker logout || true'
         }
         success {
             echo 'Deployment to GKE completed successfully!'
