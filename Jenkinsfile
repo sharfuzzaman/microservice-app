@@ -1,16 +1,16 @@
 pipeline {
-    agent { label 'master' }  // Agent for the entire pipeline
+    agent any  // Use any available node (should pick Built-In Node)
     environment {
-        DOCKER_HUB_CREDS = credentials('docker-hub-credentials')  // Matches your credential ID
-        GKE_CREDS = credentials('gke-credentials')              // Matches your GKE credential ID
-        PROJECT_ID = 'thesis-work-455913'                          // Replace with your GCP project ID
+        DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
+        GKE_CREDS = credentials('gke-credentials')
+        PROJECT_ID = 'thesis-work-455913'
         CLUSTER_NAME = 'petclinic-cluster'
         REGION = 'europe-north1-a'
     }
     stages {
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/yourusername/spring-petclinic-microservices.git', branch: 'main'
+                git url: 'https://github.com/sharfuzzaman/microservice-app.git', branch: 'main'
             }
         }
         stage('Build and Push Docker Images') {
@@ -50,9 +50,7 @@ pipeline {
     }
     post {
         always {
-            node('any') {  // Explicit node block for post actions
-                sh 'docker logout'
-            }
+            sh 'docker logout'  // Rely on pipeline-level agent
         }
         success {
             echo 'Deployment to GKE completed successfully!'
