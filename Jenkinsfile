@@ -1,16 +1,16 @@
 pipeline {
     agent any
     environment {
-        DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
+        DOCKER_HUB_CREDS = credentials('docker-hub-cred')
         GKE_CREDS = credentials('gke-credentials')
-        PROJECT_ID = 'your-project-id'  // Replace with your GCP project ID
+        PROJECT_ID = 'thesis-work-455913'  // Replace with your GCP project ID
         CLUSTER_NAME = 'petclinic-cluster'
-        REGION = 'us-central1'
+        REGION = 'europe-north1-a'
     }
     stages {
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/yourusername/your-repo.git', branch: 'main'
+                git url: 'https://github.com/sharfuzzaman/microservice-app.git', branch: 'main'
             }
         }
         stage('Build and Push Docker Images') {
